@@ -174,9 +174,40 @@ class SPS30:
         else:
             return "Data not available"
 
+    def stop(self):
+        cmd = bytearray([0x01, 0x04])
+
+        with self.i2c_device as i2c:
+            i2c.write(cmd)
+
     def reset(self):
         #FIXME: Unable to reactivate after sending the reset sequence.
         cmd = bytearray([0xD3, 0x04])
 
         with self.i2c_device as i2c:
             i2c.write(cmd)
+
+    def cleanFan(self):
+        """
+        Starts the fan self-cleaning process. This is set to happen by default after one week of continuous operation.
+        
+        Notes: 
+            While this process is running the 'read data ready' flag remains active, but the data is not updated
+
+            This process must be started while the device is in measurement mode 
+        """
+        cmd = bytearray([0x56, 0x07])
+
+        with self.i2c_device as i2c:
+            i2c.write(cmd)
+    
+
+    #TODO: Implement Read/Write Auto Cleaning Interval (6.3.8)
+    #TODO: Implement Read Device Status Register (6.3.11, 4.4 )
+    #TODO: Implement Read firmware version (6.3.10)
+
+
+    #These appear to have issues operating with the adafruit i2c library. Not a high-priority item
+    #TODO: Implement sleep mode (6.3.5)
+    #TODO: Implement wakeup mode (6.3.6)
+
