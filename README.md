@@ -1,6 +1,9 @@
 # CircuitPython_SPS30
 
+CircuitPython driver for the [Sensiron SPS 30](https://www.sensirion.com/en/environmental-sensors/particulate-matter-sensors-pm25/)
+
 ### Usage
+Copy Sensiron_sps30.py to your CircuitPython device.
 See sps30_test.py for an example implementation.
 
 ### Example Output
@@ -18,6 +21,5 @@ Typical Particle Size [um] : 0.601643
 ```
 
 ### Special Thanks to:
-* UnravelTec for their RaspberryPi implementation
-  * Reviewing their code helped in designing this: https://github.com/UnravelTEC/Raspi-Driver-SPS30
+* UnravelTec for their [RaspberryPi implementation](https://github.com/UnravelTEC/Raspi-Driver-SPS30)
 * Adafruit for CircuitPython/I2C libraries
