@@ -1,5 +1,7 @@
-import board, busio, struct
+import board, busio, struct, time
+from collections import OrderedDict
 from adafruit_bus_device.i2c_device import I2CDevice
+
 
 __version__ = ""
 __repo__ = ""
@@ -94,8 +96,9 @@ class SPS30:
                     parsed_byte_array.extend(temp_byte_array)
                     temp_byte_array = bytearray(2)
                     byte_counter = 0
+                #Raise a real error here?
                 else:
-                    print("checksum failed")
+                    return False
         return parsed_byte_array
 
 ################################
@@ -109,7 +112,7 @@ class SPS30:
         return struct.unpack('>f', struct_float)[0]
 
     def parseMeasurement(self, measurement):
-        measurement_obj = {}
+        measurement_obj = OrderedDict()
 
         measurement_obj["Mass Concentration PM 1.0 [ug/m3]"] = self.calcFloat(measurement[0:4])
         measurement_obj["Mass Concentration PM 2.5 [ug/m3]"] = self.calcFloat(measurement[4:8])
@@ -131,83 +134,139 @@ class SPS30:
 #### SPS30 Communication Functions ####
 #######################################
 
-
-    def getSerialNumber(self):
-        #send the following command to ge the serial number
-        cmd = bytearray([0xD0, 0x33])
-        buf = bytearray(47)
+    def sendCommand(self, cmd):
+        """
+        Helper function for sending commands to the SPS30 that require no response parsing, etc.
+        """
         with self.i2c_device as i2c:
-            i2c.write_then_readinto(cmd, buf)
-        #FIXME: Return the raw bytes. We should parse this into a string. 
-        return(self.parse_crc8(buf))
+            i2c.write(cmd)
 
 
     def startMeasurement(self):
+        """
+        Starts the measurement mode.
+        Datasheet section 6.3.1 
+
+        Notes:
+            Output format is hard-coded to Big Endian IEEE754 float values and the readMeasurement function is designed to handle this format only.
+        """
         cmd = bytearray([0x00, 0x10, 0x03, 0x00, self.calc_crc8([0x03, 0x00])])
         
         with self.i2c_device as i2c:
             i2c.write(cmd)
 
-        #FIXME: Right now we just YOLO and assume everything is OK. In the future we should read the device's status (Section 6.3.11)    
-    
-    def readMeasurement(self):
-        #First check to see if there is data ready
+        #FIXME: Right now we just YOLO and assume everything is OK. In the future we should read the device's status (Section 6.3.11)  
+
+
+    def stopMeasurement(self):
+        """
+        Stops the sensor from taking measurements. Send back to idle-mode
+        Datasheet section 6.3.2
+        """
+        self.sendCommand(bytearray([0x01, 0x04]))
+
+
+    def dataReady(self):
+        """
+        Check to see if there is data to be read. This should be called before any measurements are read.
+        Notes:
+            Originally this was combined with the readMeasurement function but for
+            the sake of complexity I think the user should be responsible for checking
+
+        Datasheet section 6.3.3
+        """
         cmd = bytearray([0x02, 0x02])
-        #Setup a buffer to read into
         buf = bytearray(3)
 
         with self.i2c_device as i2c:
             i2c.write_then_readinto(cmd, buf)
         #Check the CRC and parse the data out. The flag that we want is always in the second bit
-        data_ready =  self.parse_crc8(buf)[1]
+        data_ready = self.parse_crc8(buf)[1]
 
-        if data_ready == 1:
-            cmd = bytearray([0x03, 0x00])
-            buf = bytearray(60)
+        if data_ready == 0:
+            return False
+        elif data_ready == 1:
+            return True
 
-            with self.i2c_device as i2c:
-                i2c.write_then_readinto(cmd, buf)
-            
-            measurement = self.parse_crc8(buf)
-            parsed_measurement = self.parseMeasurement(measurement)
-            return parsed_measurement
-        else:
-            return "Data not available"
 
-    def stop(self):
-        cmd = bytearray([0x01, 0x04])
+    def readMeasurement(self):
+        """
+        Check to see if there are measurements ready and then read, parse and return them.
+        Datasheet sections 6.3.4
 
-        with self.i2c_device as i2c:
-            i2c.write(cmd)
+        TODO: need to make this more bullet-proof. Save/retry from checksum errors and data-not-available errors, 
+        bubble up real exceptions from both this and the checksum functions.
+        """
 
-    def reset(self):
-        #FIXME: Unable to reactivate after sending the reset sequence.
-        cmd = bytearray([0xD3, 0x04])
+        for attempts in range(5):
+            if attempts > 0:
+                #Let's take a little nap before we try again.
+                time.sleep(0.5)
+            if self.dataReady():
+                cmd = bytearray([0x03, 0x00])
+                buf = bytearray(60)
 
-        with self.i2c_device as i2c:
-            i2c.write(cmd)
+                with self.i2c_device as i2c:
+                    i2c.write_then_readinto(cmd, buf)
+        
+                measurement = self.parse_crc8(buf)
+                if measurement != False:
+                    return self.parseMeasurement(measurement)
+
+
 
     def cleanFan(self):
         """
         Starts the fan self-cleaning process. This is set to happen by default after one week of continuous operation.
-        
+        Datasheet section 6.3.7
+
         Notes: 
             While this process is running the 'read data ready' flag remains active, but the data is not updated
 
             This process must be started while the device is in measurement mode 
         """
-        cmd = bytearray([0x56, 0x07])
+        self.sendCommand(bytearray([0x56, 0x07]))
 
+
+    def getSerialNumber(self):
+        """
+        Retrieve the serial number of the device, and parse it into readable ASCII.
+        Datasheet section 6.3.9
+        """
+        serialNumber = ''
+        cmd = bytearray([0xD0, 0x33])
+        buf = bytearray(47)
         with self.i2c_device as i2c:
-            i2c.write(cmd)
+            i2c.write_then_readinto(cmd, buf)
+        
+        for i in self.parse_crc8(buf):
+            #Keep to the printable ASCII bytes to make it clean
+            if i > 0x20 and i < 0x7F:
+                serialNumber += chr(i)
+                 
+        return(serialNumber)
+
+
+    def reset(self):
+        """
+        Sets the sensor back to its initial state. If the sensor is reset it will need to be re-instantiated in order to continue using it.
+        Datasheet section 6.3.13
+        """
+        self.sendCommand(bytearray([0xD3, 0x04]))
+
+
     
-
-    #TODO: Implement Read/Write Auto Cleaning Interval (6.3.8)
-    #TODO: Implement Read Device Status Register (6.3.11, 4.4 )
-    #TODO: Implement Read firmware version (6.3.10)
-
-
+    
+    #Functionality not yet implemented
     #These appear to have issues operating with the adafruit i2c library. Not a high-priority item
     #TODO: Implement sleep mode (6.3.5)
     #TODO: Implement wakeup mode (6.3.6)
+
+    #TODO: Implement Read/Write Auto Cleaning Interval (6.3.8)
+    #TODO: Implement Read firmware version (6.3.10)
+    #TODO: Implement Read Device Status Register (6.3.11, 4.4)
+
+
+
+
 
