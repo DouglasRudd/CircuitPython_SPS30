@@ -1,9 +1,9 @@
 # CircuitPython_SPS30
 
-###Usage
+### Usage
 See sps30_test.py for an example implementation.
 
-###Example Output
+### Example Output
 ```
 Mass Concentration PM 1.0 [ug/m3] : 1.06156
 Mass Concentration PM 2.5 [ug/m3] : 1.11157
