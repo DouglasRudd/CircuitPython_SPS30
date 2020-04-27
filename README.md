@@ -16,3 +16,8 @@ Number Concentration PM 4.0 [#/m3] : 9.23938
 Number Concentration PM 10 [#/m3] : 9.24018
 Typical Particle Size [um] : 0.601643
 ```
+
+### Special Thanks to:
+* UnravelTec for their RaspberryPi implementation
+  * Reviewing their code helped in designing this: https://github.com/UnravelTEC/Raspi-Driver-SPS30
+* Adafruit for CircuitPython/I2C libraries
